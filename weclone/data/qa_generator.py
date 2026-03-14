@@ -699,16 +699,37 @@ class DataProcessor:
         Args:
             qa_res: A list of QaPair objects.
         """
+        include_image = DataModality.IMAGE in self.include_type
+        image_tokens = ("<image>", "<|image_pad|>", "<|imgpad|>")
+
+        def _sanitize_text_only_content(content: str) -> str:
+            """Remove residual multimodal placeholders for text-only exports."""
+            text = content
+            for token in image_tokens:
+                text = text.replace(token, "")
+            # Collapse long blank lines introduced by placeholder removal.
+            text = re.sub(r"\n{3,}", "\n\n", text)
+            return text.strip()
+
         processed_qa_res = []
         for idx, item in enumerate(qa_res):
+            messages = [{"role": msg.role, "content": msg.content} for msg in item.messages]
+
+            if not include_image:
+                for msg in messages:
+                    msg["content"] = _sanitize_text_only_content(msg["content"])
+
             item_dict = {
                 "id": str(idx),
                 "time": item.time.isoformat() if item.time else None,
                 "score": item.score,
-                "messages": [{"role": msg.role, "content": msg.content} for msg in item.messages],
-                "images": item.images,
+                "messages": messages,
                 "system": item.system,
             }
+
+            if include_image:
+                item_dict["images"] = item.images
+
             processed_qa_res.append(item_dict)
 
         output_path = "./dataset/res_csv/sft/sft-my.json"
